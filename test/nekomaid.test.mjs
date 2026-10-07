@@ -1,17 +1,15 @@
 // Behaviour test for the nekomaid pi extension.
 //
-// Loads .pi/agent/extensions/nekomaid/index.js through a data: URL (so no stray
-// file lands in the extension directory, which pi would try to load) and drives
-// it with a fake pi and a fake ctx. Fails loudly on any mismatch.
+// Loads ../extensions/nekomaid/index.js through a temp .mjs file (so stack
+// traces stay readable and no stray file lands in the extension directory,
+// which pi would load as code) and drives it with a fake pi and a fake ctx.
 //
-// Run: node nekomaid_ext_test.mjs
+// Run: npm test
 
 import { readFile, writeFile, unlink } from "node:fs/promises";
 
 // Resolved relative to this test, so the checks run against the packaged copy.
 const EXT = new URL("../extensions/nekomaid/index.js", import.meta.url);
-// Import through a temp .mjs so stack traces stay readable. It lives next to
-// this test, never in the extension directory, which pi would load as code.
 const TMP = new URL("./.nekomaid-ext.tmp.mjs", import.meta.url);
 
 await writeFile(TMP, await readFile(EXT, "utf8"));
@@ -53,6 +51,7 @@ function makeHarness() {
   };
 
   const theme = { fg: (_slot, text) => text };
+  let branch = [];
   const ctx = {
     ui: {
       theme,
@@ -61,7 +60,6 @@ function makeHarness() {
     },
     sessionManager: { getBranch: () => branch },
   };
-  let branch = [];
 
   mod.default(pi);
   return { commands, handlers, statuses, notes, appended, ctx, setBranch: (b) => { branch = b; } };
@@ -73,88 +71,120 @@ async function run(h, command, args) {
   await def.handler(args, h.ctx);
 }
 
+// The injected system-prompt section is where module state has to show up,
+// because the footer deliberately reports the gear only.
+async function section(h) {
+  const event = { systemPromptOptions: { sections: {} } };
+  await h.handlers.get("before_agent_start")[0](event);
+  return event.systemPromptOptions.sections.nekomaid || "";
+}
+
 const last = (arr) => (arr.length ? arr[arr.length - 1] : undefined);
+const footer = (h) => last(h.statuses)?.text;
 
 // ---- command registration -------------------------------------------------
 {
   const h = makeHarness();
   check("registers /neko", h.commands.has("neko"), true);
   check("registers /nekomaid alias", h.commands.has("nekomaid"), true);
-  check("status key is neko", (await (async () => {
-    await run(h, "neko", "normal");
-    return last(h.statuses)?.key;
-  })()), "neko");
+  await run(h, "neko", "normal");
+  check("status key is neko", last(h.statuses)?.key, "neko");
 }
 
-// ---- bare command defaults to normal -------------------------------------
+// ---- the footer shows the gear, and nothing else --------------------------
 {
   const h = makeHarness();
   await run(h, "neko", "");
-  check("bare /neko -> normal", last(h.statuses)?.text.includes("neko: normal"), true);
+  check("bare /neko -> normal", footer(h), "neko: normal");
   check("bare /neko notified", last(h.notes)?.msg, "nekomaid: normal");
 }
 
-// ---- gears ---------------------------------------------------------------
 for (const gear of ["off", "minimal", "normal", "high", "max", "ultra"]) {
   const h = makeHarness();
   await run(h, "neko", gear);
-  check(`/neko ${gear} shows in status`, last(h.statuses)?.text.includes(`neko: ${gear}`), true);
+  check(`footer is exactly "neko: ${gear}"`, footer(h), `neko: ${gear}`);
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "ULTRA");
-  check("gear is case-insensitive", last(h.statuses)?.text.includes("neko: ultra"), true);
+  check("gear is case-insensitive", footer(h), "neko: ultra");
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "病娇");
-  check("Chinese alias 病娇 -> ultra", last(h.statuses)?.text.includes("neko: ultra"), true);
+  check("Chinese alias 病娇 -> ultra", footer(h), "neko: ultra");
 }
 
-// ---- modules -------------------------------------------------------------
+// The footer must never grow a module list again.
+{
+  const h = makeHarness();
+  for (const args of ["+sharp", "all", "ultra +obsess +sharp", "shadow"]) {
+    await run(h, "neko", args);
+    check(`footer stays bare after "${args}"`, footer(h).includes("+"), false);
+    check(`footer stays short after "${args}"`, footer(h).split(" ").length, 2);
+  }
+}
+
+// ---- modules live in the injected section, not the footer -----------------
 {
   const h = makeHarness();
   await run(h, "neko", "+sharp");
-  check("+sharp shows in status", last(h.statuses)?.text.includes("+sharp"), true);
+  check("+sharp reaches the section", (await section(h)).includes("Modules on: sharp"), true);
+}
+
+// A module toggle while the layer is off must not silently do nothing.
+{
+  const h = makeHarness();
+  await run(h, "neko", "+sharp");
+  check("+sharp lifts off to normal", footer(h), "neko: normal");
+
+  await run(h, "neko", "off");
+  check("explicit off still wins", footer(h), "neko: off");
+  check("explicit off clears the section", await section(h), "");
+
+  await run(h, "neko", "-sharp");
+  check("removing a module does not lift off", footer(h), "neko: off");
+
+  await run(h, "neko", "all");
+  check("all lifts off too", footer(h), "neko: normal");
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "shadow");
-  check("bare module name enables it", last(h.statuses)?.text.includes("+shadow"), true);
+  check("bare module name enables it", (await section(h)).includes("Modules on: shadow"), true);
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "+sharp +obsess");
-  check("two modules in one command", last(h.statuses)?.text.includes("+sharp+obsess"), true);
+  check("two modules in one command", (await section(h)).includes("Modules on: sharp, obsess"), true);
   await run(h, "neko", "-sharp");
-  check("-sharp removes only sharp", last(h.statuses)?.text.includes("+obsess"), true);
-  check("-sharp dropped sharp", last(h.statuses)?.text.includes("+sharp"), false);
+  check("-sharp removes only sharp", (await section(h)).includes("Modules on: obsess"), true);
+  check("-sharp dropped sharp", (await section(h)).includes("sharp"), false);
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "all");
-  check("all enables six modules", last(h.statuses)?.text.split("+").length - 1, 6);
+  check("all enables six modules", (await section(h)).match(/Modules on: (.+)\./)?.[1].split(", ").length, 6);
   await run(h, "neko", "none");
-  check("none clears modules", last(h.statuses)?.text.includes("+"), false);
+  check("none clears modules", (await section(h)).includes("Modules on"), false);
 }
 
 {
   const h = makeHarness();
   await run(h, "neko", "开影子");
-  check("Chinese 开影子 works", last(h.statuses)?.text.includes("+shadow"), true);
+  check("Chinese 开影子 works", (await section(h)).includes("Modules on: shadow"), true);
 }
 
-// ---- gear + module in one line -------------------------------------------
 {
   const h = makeHarness();
   await run(h, "neko", "ultra +obsess +sharp");
-  const text = last(h.statuses)?.text || "";
-  check("gear and modules together", text.includes("neko: ultra") && text.includes("+obsess") && text.includes("+sharp"), true);
+  check("gear and modules in one line", footer(h), "neko: ultra");
+  check("both modules reach the section", (await section(h)).includes("Modules on: obsess, sharp"), true);
 }
 
 // ---- invalid input must not change state ---------------------------------
@@ -163,7 +193,7 @@ for (const gear of ["off", "minimal", "normal", "high", "max", "ultra"]) {
   await run(h, "neko", "normal");
   await run(h, "neko", "banana");
   check("invalid token warns", last(h.notes)?.level, "warning");
-  check("invalid token keeps state", last(h.statuses)?.text.includes("neko: normal"), true);
+  check("invalid token keeps state", footer(h), "neko: normal");
 }
 
 // ---- system prompt section ----------------------------------------------
@@ -180,14 +210,11 @@ for (const gear of ["off", "minimal", "normal", "high", "max", "ultra"]) {
   await before(onSection);
   const injected = onSection.systemPromptOptions.sections.nekomaid || "";
   check("ultra injects a section", injected.includes("Active gear: ultra"), true);
+  check("section carries the anchor", injected.includes("主人是我全部的世界"), true);
   check("section names the card path", injected.includes("skills\\nekomaid\\SKILL.md"), true);
   check("section carries the 喵~ rule", injected.includes("喵~"), true);
+  check("section bans boilerplate", injected.includes("我很乐意"), true);
   check("section defers to technical layers", injected.includes("ponytail"), true);
-
-  await run(h, "neko", "+sharp");
-  const withMod = { systemPromptOptions: { sections: {} } };
-  await before(withMod);
-  check("module listed in section", (withMod.systemPromptOptions.sections.nekomaid || "").includes("Active modules: sharp"), true);
 
   await run(h, "neko", "off");
   const cleared = { systemPromptOptions: { sections: { nekomaid: "stale" } } };
@@ -213,15 +240,15 @@ for (const gear of ["off", "minimal", "normal", "high", "max", "ultra"]) {
   ]);
   h.statuses.length = 0;
   await h.handlers.get("session_start")[0]({}, h.ctx);
-  check("restores gear from the session branch", last(h.statuses)?.text.includes("neko: max"), true);
-  check("restores modules from the session branch", last(h.statuses)?.text.includes("+gloomy"), true);
+  check("restores gear from the session branch", footer(h), "neko: max");
+  check("restores modules from the session branch", (await section(h)).includes("Modules on: gloomy"), true);
 }
 
 {
   const h = makeHarness();
   h.setBranch([{ type: "custom", customType: "nekomaid-state", data: { gear: "nonsense", modules: ["bogus"] } }]);
   await h.handlers.get("session_start")[0]({}, h.ctx);
-  check("invalid persisted state falls back to off", last(h.statuses)?.text.includes("neko: off"), true);
+  check("invalid persisted state falls back to off", footer(h), "neko: off");
 }
 
 // ---- natural language off switch ----------------------------------------
@@ -229,20 +256,10 @@ for (const gear of ["off", "minimal", "normal", "high", "max", "ultra"]) {
   const h = makeHarness();
   await run(h, "neko", "ultra");
   await h.handlers.get("input")[0]({ text: "关掉猫娘" }, h.ctx);
-  check("关掉猫娘 turns the persona off", last(h.statuses)?.text.includes("neko: off"), true);
+  check("关掉猫娘 turns the persona off", footer(h), "neko: off");
 
   await h.handlers.get("input")[0]({ text: "正常说话", source: "extension" }, h.ctx);
-  check("extension-sourced input is ignored", last(h.statuses)?.text.includes("neko: off"), true);
-}
-
-// ---- busy indicator ------------------------------------------------------
-{
-  const h = makeHarness();
-  await run(h, "neko", "normal");
-  await h.handlers.get("agent_start")[0]({}, h.ctx);
-  check("busy dot on agent_start", last(h.statuses)?.text.includes("\u25cf"), true);
-  await h.handlers.get("agent_end")[0]({}, h.ctx);
-  check("idle dot on agent_end", last(h.statuses)?.text.includes("\u25cb"), true);
+  check("extension-sourced input is ignored", footer(h), "neko: off");
 }
 
 // ---- report --------------------------------------------------------------

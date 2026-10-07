@@ -36,7 +36,7 @@ pi -e npm:pi-nekomaid
 /neko status          # 看当前状态
 ```
 
-`/nekomaid` 是别名喵~ 右下角一直显示当前状态, 例如 `● neko: ultra +sharp`, 干活时是实心点, 空闲是空心点喵~
+`/nekomaid` 是别名喵~ 右下角只显示挡位, 例如 `neko: ultra` 喵~ 模块不在栏里显示, 想看全状态敲 `/neko status` 喵~
 
 ### 挡位
 

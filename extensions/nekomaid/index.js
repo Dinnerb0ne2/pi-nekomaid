@@ -91,6 +91,7 @@ export function parseCommand(args, state) {
 
   const next = { ...state, modules: [...state.modules] };
   const actions = [];
+  let sawGear = false;
 
   for (const token of text.split(/\s+/)) {
     const lower = token.toLowerCase();
@@ -107,6 +108,7 @@ export function parseCommand(args, state) {
     const gear = normalizeGear(token);
     if (gear) {
       next.gear = gear;
+      sawGear = true;
       actions.push(`gear ${gear}`);
       continue;
     }
@@ -119,6 +121,14 @@ export function parseCommand(args, state) {
       continue;
     }
     return { type: "invalid", token };
+  }
+
+  // Turning modules on while the character layer is off would do nothing
+  // visible, because `off` suppresses the whole injected section. Lift it. An
+  // explicit `off` in the same command still wins.
+  if (next.modules.length && next.gear === "off" && !sawGear) {
+    next.gear = DEFAULT_GEAR;
+    actions.push(`gear ${DEFAULT_GEAR}`);
   }
 
   return { type: "set", state: next, actions };
@@ -136,7 +146,7 @@ export function buildSection(state) {
     `Active gear: ${state.gear}. ${GEAR_BLURB[state.gear] || ""}`.trim(),
   ];
   if (state.modules.length) {
-    lines.push(`Active modules: ${state.modules.join(", ")}.`);
+    lines.push(`Modules on: ${state.modules.join(", ")}.`);
   }
   lines.push(
     "",
@@ -174,7 +184,6 @@ export function resolveSessionState(entries, fallback) {
 
 export default function nekomaidExtension(pi) {
   let state = { gear: IDLE_GEAR, modules: [] };
-  let busy = false;
   let lastCtx = null;
 
   function paint(ctx, slot, text) {
@@ -193,13 +202,11 @@ export default function nekomaidExtension(pi) {
     const c = ctx || lastCtx;
     if (!c?.ui?.setStatus) return;
 
-    const dot = busy ? paint(c, "accent", "\u25cf") : paint(c, "dim", "\u25cb");
     const label = paint(c, "muted", "neko: ");
     const gear = state.gear === "off" ? paint(c, "dim", "off") : paint(c, "text", state.gear);
-    const mods = state.modules.length
-      ? paint(c, "muted", " " + state.modules.map((m) => `+${m}`).join(""))
-      : "";
-    c.ui.setStatus(STATUS_KEY, `${dot} ${label}${gear}${mods}`);
+    // Just the gear. Modules stay active but are reported by `/neko status`
+    // and by the toast, so the footer does not turn into a list.
+    c.ui.setStatus(STATUS_KEY, `${label}${gear}`);
   }
 
   function apply(next, ctx, quiet) {
@@ -264,16 +271,6 @@ export default function nekomaidExtension(pi) {
   pi.on("session_tree", async (_event, ctx) => {
     const entries = ctx?.sessionManager?.getBranch?.() || ctx?.sessionManager?.getEntries?.() || [];
     state = resolveSessionState(entries, state);
-    syncStatus(ctx);
-  });
-
-  pi.on("agent_start", async (_event, ctx) => {
-    busy = true;
-    syncStatus(ctx);
-  });
-
-  pi.on("agent_end", async (_event, ctx) => {
-    busy = false;
     syncStatus(ctx);
   });
 

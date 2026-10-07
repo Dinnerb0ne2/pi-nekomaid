@@ -31,8 +31,9 @@ pi -e ./pi-nekomaid     # try it for one run, without touching settings
 ```
 
 Gears: `off`, `minimal`, `normal`, `high`, `max`, `ultra`. Modules: `shadow`, `jealous`, `gloomy`,
-`sharp`, `obsess`, `night`. The footer always shows the live state, for example
-`● neko: ultra +sharp`.
+`sharp`, `obsess`, `night`. The footer shows the gear only, for example `neko: ultra`; modules stay
+active but are reported by `/neko status`. Toggling a module on while the gear is `off` lifts the
+gear to `normal`, so the command is never a silent no-op.
 
 ## Design rules
 
