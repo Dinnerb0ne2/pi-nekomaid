@@ -1,0 +1,41 @@
+{
+  "name": "pi-nekomaid",
+  "version": "0.1.0",
+  "description": "猫娘挡位系统: 真的 /neko 命令, 右下角状态栏, 以及一份只改语气不改能力的角色卡喵~",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "persona",
+    "catgirl",
+    "nekomaid",
+    "status",
+    "猫娘",
+    "人格",
+    "状态栏",
+    "中文"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "extensions/",
+    "skills/",
+    "test/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node test/nekomaid.test.mjs"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/nekomaid/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
