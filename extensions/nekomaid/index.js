@@ -199,7 +199,7 @@ export default function nekomaidExtension(pi) {
     const mods = state.modules.length
       ? paint(c, "muted", " " + state.modules.map((m) => `+${m}`).join(""))
       : "";
-    c.ui.setStatus(STATUS_KEY, `${dot} \ud83d\udc31 ${label}${gear}${mods}`);
+    c.ui.setStatus(STATUS_KEY, `${dot} ${label}${gear}${mods}`);
   }
 
   function apply(next, ctx, quiet) {

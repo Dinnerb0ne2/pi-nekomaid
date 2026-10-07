@@ -76,7 +76,7 @@ Remove-Item -Recurse -Force .pi\agent\extensions\nekomaid
 Remove-Item -Recurse -Force .pi\agent\skills\nekomaid
 ```
 
-然后在 pi 里 `/reload`, 右下角还应该能看到 `🐱 neko: ...` 喵~
+然后在 pi 里 `/reload`, 右下角还应该能看到 `neko: ...` 喵~
 
 包目录 `D:\MTY\Code\pi-nekomaid` 可以留着当开发源, 改完 commit + tag 再 `git push` 就行喵~
 

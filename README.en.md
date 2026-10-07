@@ -32,7 +32,7 @@ pi -e ./pi-nekomaid     # try it for one run, without touching settings
 
 Gears: `off`, `minimal`, `normal`, `high`, `max`, `ultra`. Modules: `shadow`, `jealous`, `gloomy`,
 `sharp`, `obsess`, `night`. The footer always shows the live state, for example
-`● 🐱 neko: ultra +sharp`.
+`● neko: ultra +sharp`.
 
 ## Design rules
 
