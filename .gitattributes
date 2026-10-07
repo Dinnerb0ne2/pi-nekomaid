@@ -1,0 +1,3 @@
+# Keep every shipped file LF, regardless of the checkout platform.
+# A CRLF rewrite would touch every line of the skill card and the extension.
+* text=auto eol=lf
